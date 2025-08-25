@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk-Return Asset Placement Game</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <style>
+        .asset-item {
+            cursor: grab;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+        
+        .asset-item:hover {
+            transform: scale(1.05);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        }
+        
+        .asset-item.dragging {
+            cursor: grabbing;
+            transform: rotate(5deg) scale(1.1);
+            z-index: 1000;
+            opacity: 0.8;
+        }
+        
+        .drop-zone {
+            transition: all 0.3s ease;
+            border: 2px dashed transparent;
+        }
+        
+        .drop-zone.drag-over {
+            border-color: #3b82f6;
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+        
+        .correct-placement {
+            border: 3px solid #10b981 !important;
+            background-color: rgba(16, 185, 129, 0.1) !important;
+            animation: correctPulse 0.6s ease-in-out;
+        }
+        
+        .incorrect-placement {
+            border: 3px solid #ef4444 !important;
+            background-color: rgba(239, 68, 68, 0.1) !important;
+            animation: incorrectShake 0.6s ease-in-out;
+        }
+        
+        @keyframes correctPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+        
+        @keyframes incorrectShake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        
+        .game-board {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border: 3px solid #cbd5e1;
+        }
+        
+        .quadrant-1 { background: rgba(239, 68, 68, 0.1); }    /* High Risk, Low Return - Red */
+        .quadrant-2 { background: rgba(251, 191, 36, 0.1); }   /* High Risk, High Return - Yellow */
+        .quadrant-3 { background: rgba(59, 130, 246, 0.1); }   /* Low Risk, Low Return - Blue */
+        .quadrant-4 { background: rgba(16, 185, 129, 0.1); }   /* Low Risk, High Return - Green */
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">Risk-Return Asset Placement Game</h1>
+            <p class="text-lg text-gray-600 mb-4">Drag assets to their correct positions on the Risk-Return matrix</p>
+            <div class="flex justify-center items-center space-x-6">
+                <div class="bg-white rounded-lg px-4 py-2 shadow-md">
+                    <span class="text-sm text-gray-600">Score:</span>
+                    <span id="score" class="text-xl font-bold text-blue-600">0</span>
+                </div>
+                <div class="bg-white rounded-lg px-4 py-2 shadow-md">
+                    <span class="text-sm text-gray-600">Correct:</span>
+                    <span id="correct-count" class="text-xl font-bold text-green-600">0</span>/<span class="text-gray-500">12</span>
+                </div>
+                <button id="reset-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors">
+                    <i class="fas fa-redo mr-2"></i>Reset Game
+                </button>
+            </div>
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-8">
+            <!-- Assets Pool -->
+            <div class="lg:w-1/4">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4 text-center">Available Assets</h3>
+                <div id="assets-pool" class="bg-white rounded-xl p-4 shadow-lg min-h-96">
+                    <div class="grid grid-cols-2 gap-3" id="assets-container">
+                        <!-- Assets will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Board -->
+            <div class="lg:w-3/4">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4 text-center">Risk-Return Matrix</h3>
+                <div class="game-board rounded-xl p-6 shadow-lg bg-white relative" style="height: 500px;">
+                    
+                    <!-- Axis Labels -->
+                    <div class="absolute -bottom-8 left-1/2 transform -translate-x-1/2 text-lg font-semibold text-gray-700">
+                        <i class="fas fa-arrow-right mr-2"></i>Return (Low → High)
+                    </div>
+                    <div class="absolute -left-16 top-1/2 transform -translate-y-1/2 -rotate-90 text-lg font-semibold text-gray-700">
+                        <i class="fas fa-arrow-up mr-2"></i>Risk (Low → High)
+                    </div>
+                    
+                    <!-- Grid Lines -->
+                    <div class="absolute inset-0 m-6">
+                        <div class="w-full h-full border-2 border-gray-300 relative">
+                            <!-- Vertical center line -->
+                            <div class="absolute left-1/2 top-0 bottom-0 border-l-2 border-gray-200"></div>
+                            <!-- Horizontal center line -->
+                            <div class="absolute top-1/2 left-0 right-0 border-t-2 border-gray-200"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Quadrants -->
+                    <div class="absolute inset-0 m-6 grid grid-cols-2 grid-rows-2">
+                        <!-- Top Left: High Risk, Low Return -->
+                        <div class="drop-zone quadrant-1 border-2 border-transparent rounded-tl-lg flex items-center justify-center" data-quadrant="high-risk-low-return">
+                            <div class="text-center text-red-600 font-semibold opacity-50">
+                                <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
+                                <div>High Risk</div>
+                                <div>Low Return</div>
+                                <div class="text-sm">(Avoid)</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Top Right: High Risk, High Return -->
+                        <div class="drop-zone quadrant-2 border-2 border-transparent rounded-tr-lg flex items-center justify-center" data-quadrant="high-risk-high-return">
+                            <div class="text-center text-yellow-600 font-semibold opacity-50">
+                                <i class="fas fa-chart-line text-2xl mb-2"></i>
+                                <div>High Risk</div>
+                                <div>High Return</div>
+                                <div class="text-sm">(Aggressive)</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Bottom Left: Low Risk, Low Return -->
+                        <div class="drop-zone quadrant-3 border-2 border-transparent rounded-bl-lg flex items-center justify-center" data-quadrant="low-risk-low-return">
+                            <div class="text-center text-blue-600 font-semibold opacity-50">
+                                <i class="fas fa-shield-alt text-2xl mb-2"></i>
+                                <div>Low Risk</div>
+                                <div>Low Return</div>
+                                <div class="text-sm">(Conservative)</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Bottom Right: Low Risk, High Return -->
+                        <div class="drop-zone quadrant-4 border-2 border-transparent rounded-br-lg flex items-center justify-center" data-quadrant="low-risk-high-return">
+                            <div class="text-center text-green-600 font-semibold opacity-50">
+                                <i class="fas fa-gem text-2xl mb-2"></i>
+                                <div>Low Risk</div>
+                                <div>High Return</div>
+                                <div class="text-sm">(Ideal)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Instructions -->
+                <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 class="font-semibold text-blue-800 mb-2">
+                        <i class="fas fa-info-circle mr-2"></i>How to Play:
+                    </h4>
+                    <ul class="text-blue-700 text-sm space-y-1">
+                        <li>• Drag each asset from the left panel to its correct position on the Risk-Return matrix</li>
+                        <li>• X-axis represents Return (left = low, right = high)</li>
+                        <li>• Y-axis represents Risk (bottom = low, top = high)</li>
+                        <li>• Green border = correct placement, Red border = incorrect placement</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Asset definitions with correct quadrants
+        const assets = [
+            { id: 'savings', name: 'Savings Account', icon: 'fas fa-piggy-bank', color: '#3b82f6', quadrant: 'low-risk-low-return' },
+            { id: 'gov-bonds', name: 'Government Bonds', icon: 'fas fa-university', color: '#1e40af', quadrant: 'low-risk-low-return' },
+            { id: 'corp-bonds', name: 'Corporate Bonds', icon: 'fas fa-building', color: '#6366f1', quadrant: 'low-risk-low-return' },
+            { id: 'blue-chip', name: 'Blue Chip Stocks', icon: 'fas fa-star', color: '#8b5cf6', quadrant: 'low-risk-high-return' },
+            { id: 'real-estate', name: 'Real Estate', icon: 'fas fa-home', color: '#10b981', quadrant: 'low-risk-high-return' },
+            { id: 'gold', name: 'Gold', icon: 'fas fa-coins', color: '#f59e0b', quadrant: 'low-risk-high-return' },
+            { id: 'growth-stocks', name: 'Growth Stocks', icon: 'fas fa-rocket', color: '#ef4444', quadrant: 'high-risk-high-return' },
+            { id: 'commodities', name: 'Commodities', icon: 'fas fa-oil-can', color: '#dc2626', quadrant: 'high-risk-high-return' },
+            { id: 'cryptocurrency', name: 'Cryptocurrency', icon: 'fab fa-bitcoin', color: '#FF8C00', quadrant: 'high-risk-high-return' },
+            { id: 'emerging-markets', name: 'Emerging Markets', icon: 'fas fa-globe-americas', color: '#7c3aed', quadrant: 'high-risk-high-return' },
+            { id: 'options', name: 'Options', icon: 'fas fa-exchange-alt', color: '#be185d', quadrant: 'high-risk-low-return' },
+            { id: 'futures', name: 'Futures', icon: 'fas fa-chart-bar', color: '#991b1b', quadrant: 'high-risk-low-return' }
+        ];
+
+        let score = 0;
+        let correctPlacements = 0;
+        let draggedAsset = null;
+
+        // Initialize the game
+        function initGame() {
+            createAssets();
+            setupDragAndDrop();
+            updateScore();
+        }
+
+        // Create asset elements
+        function createAssets() {
+            const container = document.getElementById('assets-container');
+            container.innerHTML = '';
+            
+            // Shuffle assets for random placement
+            const shuffledAssets = [...assets].sort(() => Math.random() - 0.5);
+            
+            shuffledAssets.forEach(asset => {
+                const assetElement = document.createElement('div');
+                assetElement.className = 'asset-item bg-white rounded-full w-20 h-20 flex flex-col items-center justify-center shadow-md border-2';
+                assetElement.draggable = true;
+                assetElement.dataset.assetId = asset.id;
+                assetElement.dataset.quadrant = asset.quadrant;
+                assetElement.style.borderColor = asset.color;
+                
+                assetElement.innerHTML = `
+                    <i class="${asset.icon} text-lg mb-1" style="color: ${asset.color}"></i>
+                    <span class="text-xs text-center font-medium text-gray-700 leading-tight">${asset.name.split(' ').join('<br>')}</span>
+                `;
+                
+                container.appendChild(assetElement);
+            });
+        }
+
+        // Setup drag and drop functionality
+        function setupDragAndDrop() {
+            const assetElements = document.querySelectorAll('.asset-item');
+            const dropZones = document.querySelectorAll('.drop-zone');
+
+            assetElements.forEach(asset => {
+                asset.addEventListener('dragstart', handleDragStart);
+                asset.addEventListener('dragend', handleDragEnd);
+            });
+
+            dropZones.forEach(zone => {
+                zone.addEventListener('dragover', handleDragOver);
+                zone.addEventListener('dragenter', handleDragEnter);
+                zone.addEventListener('dragleave', handleDragLeave);
+                zone.addEventListener('drop', handleDrop);
+            });
+        }
+
+        function handleDragStart(e) {
+            draggedAsset = e.target;
+            e.target.classList.add('dragging');
+        }
+
+        function handleDragEnd(e) {
+            e.target.classList.remove('dragging');
+            draggedAsset = null;
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+        }
+
+        function handleDragEnter(e) {
+            e.preventDefault();
+            e.target.classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            e.target.classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.target.classList.remove('drag-over');
+            
+            if (!draggedAsset) return;
+            
+            const assetQuadrant = draggedAsset.dataset.quadrant;
+            const targetQuadrant = e.target.dataset.quadrant;
+            
+            // Remove asset from current position
+            draggedAsset.remove();
+            
+            // Create new asset in drop zone
+            const newAsset = draggedAsset.cloneNode(true);
+            newAsset.style.position = 'absolute';
+            newAsset.style.left = `${Math.random() * (e.target.offsetWidth - 80)}px`;
+            newAsset.style.top = `${Math.random() * (e.target.offsetHeight - 80)}px`;
+            
+            // Check if placement is correct
+            if (assetQuadrant === targetQuadrant) {
+                e.target.classList.add('correct-placement');
+                setTimeout(() => e.target.classList.remove('correct-placement'), 1000);
+                score += 10;
+                correctPlacements++;
+            } else {
+                e.target.classList.add('incorrect-placement');
+                setTimeout(() => e.target.classList.remove('incorrect-placement'), 1000);
+                score = Math.max(0, score - 2);
+            }
+            
+            e.target.appendChild(newAsset);
+            
+            // Re-setup drag and drop for new asset
+            newAsset.addEventListener('dragstart', handleDragStart);
+            newAsset.addEventListener('dragend', handleDragEnd);
+            
+            updateScore();
+            checkGameComplete();
+        }
+
+        function updateScore() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('correct-count').textContent = correctPlacements;
+        }
+
+        function checkGameComplete() {
+            if (correctPlacements === assets.length) {
+                setTimeout(() => {
+                    alert(`🎉 Congratulations! You've completed the game with a score of ${score}!`);
+                }, 500);
+            }
+        }
+
+        function resetGame() {
+            score = 0;
+            correctPlacements = 0;
+            
+            // Clear all drop zones
+            document.querySelectorAll('.drop-zone').forEach(zone => {
+                const assets = zone.querySelectorAll('.asset-item');
+                assets.forEach(asset => asset.remove());
+            });
+            
+            // Recreate assets in the pool
+            createAssets();
+            setupDragAndDrop();
+            updateScore();
+        }
+
+        // Event listeners
+        document.getElementById('reset-btn').addEventListener('click', resetGame);
+
+        // Initialize the game when page loads
+        document.addEventListener('DOMContentLoaded', initGame);
+    </script>
+</body>
+</html>
